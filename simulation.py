@@ -76,45 +76,44 @@ class Simulation:
         #=======================================================================
         # SIR_load() berechnet ein Ausbruchsszenario nach dem SIR-Modell.
         # Als Adjazenzmatrizen wird eine gegebene Serie unter 'graph.dat' geladen.
+        # Bei einer infektioesen Periode von N werden N+1 Klassen initialisiert.
+        # Die Erste ist die Einheitsmatrix und alle anderen sind Nullmatrizen.
         #=======================================================================
         
-        #=======================================================================
-        # Berechnung der Leslie-Matrix fuer den ersten Zeitschritt
-        #=======================================================================
-        T = sp.lil_matrix((self.memory+1,self.memory+1),dtype=np.int16)
-        T[0,0:-1] = 1
-        T = T.tocsr()
-        K = sp.eye(self.memory+1,self.memory+1,1,dtype=np.int16,format='lil').transpose()
-        K[-1,-1] = 1
-        M = sp.kron(K.tocsr(), sp.eye(self.size,self.size,dtype=np.int16, format='csr'),format='csr')
-        L =  M + sp.kron(T,A[0],format='csr')
-        C = L[:,0:self.size]
-        tmp = [sp.csr_matrix((self.size,self.size),dtype=np.int16) for ii in range(self.memory+1)]
-        C = self.clearMat(C,tmp)
+        infclass = [sp.csr_matrix((self.size,self.size),dtype=np.int16) for ii in range(self.memory+2)]
+        infclass[0] = sp.eye(self.size,self.size,dtype=np.int16,format='csr')
         
         #=======================================================================
-        # C beinhaltet die Altersklassen des Netzwerks
-        # sumup ist eine Hilfsmatrix um C blockweise aufzusummieren
         # Die Zugangsmatrix zm zum Zeitpunkt 0 ist die Einheitsmatrix und
-        # zum Zeitpunkt 1 gerade gleich der ersten Adjazenzmatrix und eins wenn 
-        # die Infektionsperiode groesser ist als 0
+        # zum Zeitpunkt t gerade gleich der Summe aller Infektionsklassen
         #=======================================================================
-        sumup = sp.hstack(np.append([sp.eye(self.size,self.size,dtype=np.int16, format='csr') for ii in range(self.memory)],[sp.csr_matrix((self.size,self.size),dtype=np.int16)])).tocsr()
-        self.total_infection_paths = np.zeros((1,self.runtime+1),dtype=int)[0]
-        self.total_infection_paths[0] = C.nnz
-        self.current_infection_paths = np.zeros((1,self.runtime+1),dtype=int)[0]
-        self.total_infection_paths[0] = (sumup*C).nnz
+        self.total_infection_paths = np.zeros((1,self.runtime),dtype=int)[0]
+        self.current_infection_paths = np.zeros((1,self.runtime),dtype=int)[0]
+        elem = np.zeros((1,self.memory+2),dtype=int)[0]
+        elem[0] = self.size
         #=======================================================================
         # Die zeitabhaengige Zugangsmatrix wird berechnet
         #=======================================================================
-        for ii in range(1,self.runtime):
-            if ii % 100 == 0:
-                 print str(ii) + " out of " + str(self.runtime) 
-            L = M + sp.kron(T,A[ii], format='csr')
-            C = L*C
-            C = self.clearMat(C, tmp)
-            self.total_infection_paths[ii] = C.nnz
-            self.total_infection_paths[ii] = (sumup*C).nnz
+        for jj in range(0,self.runtime):
+            if jj % 100 == 0:
+                print str(jj+1) + " out of " + str(self.runtime) 
+            newinf = sp.csr_matrix((self.size,self.size),dtype=np.int16)
+            for ii in range(0,self.memory+1):
+                newinf = newinf + A[jj].dot(infclass[ii])
+            newinf.data[newinf.data > 0] = 1
+            
+            newinf = newinf - newinf.multiply(infclass[-1])
+            newinf = newinf - newinf.multiply(infclass[0])
+            infclass[-1] = infclass[-1] + infclass[-2]
+            for ii in range(self.memory,0,-1):
+                newinf = newinf - newinf.multiply(infclass[ii])
+                infclass[ii] = infclass[ii-1]
+            
+            elem[-1] = elem[-1] + elem[-2]
+            elem[1:-1] = elem[0:-2]
+            elem[0] = newinf.nnz
+            self.total_infection_paths[jj] = sum(elem)
+            self.current_infection_paths[jj] = sum(elem[0:-1])
         self.total_infection_paths = self.total_infection_paths.astype(float)/self.size**2
         self.current_infection_paths = self.current_infection_paths.astype(float)/self.size**2
         return
@@ -317,8 +316,8 @@ class Simulation:
             self.current_infection_paths[ii] = np.double(self.zm[ii].nnz)/self.size**2
         return
 
-    def runSimulation(self, graph="sociopatterns_hypertext.dat", size=100, prob=0.01, runtime=100, isjob=False, mode="aggregate", memory=2300):
-        if ((str(graph) == "sociopatterns_hypertext.dat") or (str(graph) == "sexual_contacts.dat")):
+    def runSimulation(self, graph="sociopatterns_hypertext.dat", size=100, prob=0.01, runtime=100, isjob=False, mode="SIR", memory=10000):
+        if ((str(graph) == "sociopatterns_hypertext.dat") or (str(graph) == "sexual_contacts.dat") or (str(graph) == "testnetwork.txt")):
             A = readdata(str(graph))
             self.size = A[0].shape[0]
             self.prob = 0
@@ -333,7 +332,6 @@ class Simulation:
             elif self.mode == 'SIS':
                 self.SIS_load(A)
             elif self.mode == 'SIR':
-                self.memory = self.memory+1
                 self.SIR_load(A)
             elif self.mode == 'aggregate':
                 self.memory = 0
