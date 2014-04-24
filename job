@@ -1,0 +1,76 @@
+#!/bin/bash
+#PBS -q defq   
+#PBS -l mem=5000Mb
+#PBS -j oe
+#PBS -m n
+cd $PBS_O_WORKDIR
+
+echo "=========================================================="
+export SAVE=${DIR}results/
+START=$(date +"%s")
+STARTH=$(date -u -d @${START} +"%T")
+echo "Starting on : $STARTH"
+echo "Running on node : $(hostname)"
+echo "Current directory : $(pwd)"
+if [ "x" == "x$MEMORY" ] ; then
+     echo "Memory is not set"
+else
+     echo "Memory length is: ${MEMORY}"
+fi
+if [ "x" != "x$PROB" ] ; then
+	 echo "Link probability is: ${PROB}"
+else
+	 echo "Probability is not set"
+fi
+if [ "x" != "x$SIZE" ] ; then
+	 echo "Graph size is: ${SIZE}"
+else
+	 echo "Size is not set"
+fi
+if [ "x" != "x$TIME" ] ; then
+	 echo "Simulation time is: ${TIME}"
+else
+	 echo "Time is not set"
+fi
+if [ "x" != "x$SAVE" ] ; then
+	 echo "The output directory is: ${SAVE}"
+else
+	 echo "Directory is not set"
+fi
+if [ "x" != "x$PBS_JOBNAME" ] ; then
+	 echo "The file name is: ${PBS_JOBNAME}"
+else
+	 echo "File name is not set"
+fi
+if [ "x" != "x$MODE" ] ; then
+	 echo "The simulation model is: ${MODE}"
+else
+	echo "Mode is not set"
+fi
+if [ "x" != "x$mem" ] ; then
+	 echo "Allocated RAM: ${mem}"
+else
+	echo "RAM is not specified"
+fi
+echo "=========================================================="
+echo ""
+
+
+mkdir -p $SAVE
+python << M_PROG
+import simulation as sm
+SM = sm.Simulation()
+SM.runSimulation('${GRAPH}','${SIZE}','${PROB}','${TIME}',"True",'${MODE}','${MEMORY}')
+SM.save('${SAVE}','${PBS_JOBNAME}')
+M_PROG
+
+END=$(date +"%s")
+ENDH=$(date -u -d @${END} +"%T")
+EXEC=$(($END-$START))
+EXECH=$(date -u -d @${EXEC} +"%T")
+
+echo ""
+echo "=========================================================="
+echo "Finished on : $ENDH"
+echo "Run time    : $EXECH"
+echo "=========================================================="
